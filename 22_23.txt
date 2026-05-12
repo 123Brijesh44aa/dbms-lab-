@@ -1,0 +1,178 @@
+I'll solve all 6 queries with proper explanations. Let me work through each one systematically.
+
+---
+
+## Schema Reference
+
+```
+student       (sid, sname, gender, age, gpa)
+professor     (prof_ssn, prof_name, age, city, salary)
+department    (dept_name, hod_ssn, dept_email, year_of_establishment)
+course        (course_no, cname, dname, prof_ssn)
+enroll        (sid, dept_name, course_no)
+```
+
+> **Key relationships:** `course.dname → department.dept_name`, `course.prof_ssn → professor.prof_ssn`, `enroll.sid → student.sid`, `department.hod_ssn → professor.prof_ssn`
+
+---
+
+## Q1. Professors who teach **only** for CS department AND name starts with 'A'
+
+**Logic:** A professor teaches "only for CS" means ALL courses they teach belong to CS — none belong to any other department.
+
+```sql
+SELECT prof_name
+FROM professor
+WHERE prof_name LIKE 'A%'
+  AND prof_ssn NOT IN (
+      SELECT prof_ssn
+      FROM course
+      WHERE dname != 'Computer Science'
+  );
+```
+
+**Explanation:**
+- `LIKE 'A%'` → name starts with A
+- The subquery finds professors who teach at least one non-CS course
+- `NOT IN (...)` → excludes those professors, leaving only those who teach **exclusively** CS courses
+
+---
+
+## Q2. Names of **male** students taking both a Civil Engineering AND a Computer Science course
+
+**Logic:** Find students enrolled in CE courses AND CS courses, then filter by gender = male.
+
+```sql
+SELECT s.sname
+FROM student s
+WHERE s.gender = 'M'
+  AND s.sid IN (
+      SELECT e.sid
+      FROM enroll e
+      JOIN course c ON e.course_no = c.course_no
+      WHERE c.dname = 'Civil Engineering'
+  )
+  AND s.sid IN (
+      SELECT e.sid
+      FROM enroll e
+      JOIN course c ON e.course_no = c.course_no
+      WHERE c.dname = 'Computer Science'
+  );
+```
+
+**Explanation:**
+- First subquery: students enrolled in at least one Civil Engineering course
+- Second subquery: students enrolled in at least one Computer Science course
+- Both conditions must be true (AND), giving students in **both**
+- Outer filter: only male students
+
+---
+
+## Q3. `sid`, `sname`, `gpa` of **female** students, age ≤ 23, taking Civil Engineering courses
+
+```sql
+SELECT s.sid, s.sname, s.gpa
+FROM student s
+WHERE s.gender = 'F'
+  AND s.age <= 23
+  AND s.sid IN (
+      SELECT e.sid
+      FROM enroll e
+      JOIN course c ON e.course_no = c.course_no
+      WHERE c.dname = 'Civil Engineering'
+  );
+```
+
+**Explanation:**
+- `gender = 'F'` and `age <= 23` filter applied on student table
+- Subquery fetches sids of students enrolled in any Civil Engineering course
+- Only matching students are returned
+
+---
+
+## Q4. Department with the **most male students**
+
+**Logic:** Count male students per department from `enroll`, group, then pick the max.
+
+```sql
+SELECT e.dept_name
+FROM enroll e
+JOIN student s ON e.sid = s.sid
+WHERE s.gender = 'M'
+GROUP BY e.dept_name
+HAVING COUNT(s.sid) = (
+    SELECT MAX(male_count)
+    FROM (
+        SELECT COUNT(s2.sid) AS male_count
+        FROM enroll e2
+        JOIN student s2 ON e2.sid = s2.sid
+        WHERE s2.gender = 'M'
+        GROUP BY e2.dept_name
+    ) AS counts
+);
+```
+
+**Explanation:**
+- Inner subquery: counts male students per department
+- Outer subquery: finds the maximum of those counts
+- `HAVING COUNT(...) = MAX(...)` → returns only the department(s) matching that max
+
+---
+
+## Q5. Department name and **HOD name** offering the **minimum number of courses**
+
+```sql
+SELECT d.dept_name, p.prof_name AS hod_name
+FROM department d
+JOIN professor p ON d.hod_ssn = p.prof_ssn
+WHERE d.dept_name IN (
+    SELECT dname
+    FROM course
+    GROUP BY dname
+    HAVING COUNT(course_no) = (
+        SELECT MIN(course_count)
+        FROM (
+            SELECT COUNT(course_no) AS course_count
+            FROM course
+            GROUP BY dname
+        ) AS counts
+    )
+);
+```
+
+**Explanation:**
+- Innermost subquery: counts courses per department
+- Middle subquery: finds the minimum course count
+- `HAVING COUNT(...) = MIN(...)` → departments with fewest courses
+- Join with `department` and `professor` (via `hod_ssn`) to get HOD name
+
+---
+
+## Q6. For each Civil Engineering course → `course_no`, `cname`, `prof_name`
+
+```sql
+SELECT c.course_no, c.cname, p.prof_name
+FROM course c
+JOIN professor p ON c.prof_ssn = p.prof_ssn
+WHERE c.dname = 'Civil Engineering';
+```
+
+**Explanation:**
+- Filter `course` table for CE department only
+- Join with `professor` on `prof_ssn` to get the professor's name
+- This is a straightforward 2-table join with a WHERE filter
+
+---
+
+## Quick Summary Table
+
+| Q | Key Technique |
+|---|---|
+| 1 | `NOT IN` subquery — exclusion logic |
+| 2 | Two `IN` subqueries with AND — intersection |
+| 3 | Filter + `IN` subquery |
+| 4 | `GROUP BY` + `HAVING` + nested `MAX` |
+| 5 | `GROUP BY` + `HAVING` + nested `MIN` + JOIN |
+| 6 | Simple JOIN + WHERE filter |
+
+The trickiest ones are **Q1** (exclusion logic) and **Q4/Q5** (nested aggregation). Let me know if you want any query broken down further!
