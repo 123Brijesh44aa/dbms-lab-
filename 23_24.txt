@@ -1,0 +1,154 @@
+## Schema Reference
+
+```
+Branch    (branchNo, city)
+Staff     (staffNo, Name, position, gender, DOB, salary, branchNo)
+Property  (propertyNo, city, type, rent, ownerNo, staffNo, branchNo)
+Owner     (ownerNo, Name, Address, contact_no)
+
+Position values: Manager, Supervisor, Assistant
+Type values: House, Flat
+Address: composite attribute
+```
+
+---
+
+## Q1. All male staff in Mumbai with salary > 80,000
+
+```sql
+SELECT s.*
+FROM Staff s
+JOIN Branch b ON s.branchNo = b.branchNo
+WHERE s.gender = 'M'
+  AND b.city = 'Mumbai'
+  AND s.salary > 80000;
+```
+
+**Explanation:** Join Staff with Branch to access city. Filter by gender, city, and salary together.
+
+---
+
+## Q2. All male managers in New Delhi OR Kolkata
+
+```sql
+SELECT s.*
+FROM Staff s
+JOIN Branch b ON s.branchNo = b.branchNo
+WHERE s.gender = 'M'
+  AND s.position = 'Manager'
+  AND b.city IN ('New Delhi', 'Kolkata');
+```
+
+**Explanation:** `IN ('New Delhi', 'Kolkata')` is cleaner than writing two OR conditions. Join needed because city is in Branch, not Staff.
+
+---
+
+## Q3. All flats with rent < 4000, in ascending order of price
+
+```sql
+SELECT *
+FROM Property
+WHERE type = 'Flat'
+  AND rent < 4000
+ORDER BY rent ASC;
+```
+
+**Explanation:** Simple single-table query. `type = 'Flat'` filters property type, `ORDER BY rent ASC` sorts cheapest first. No join needed here.
+
+---
+
+## Q4. Owners with 'Lucknow' in their address
+
+```sql
+SELECT *
+FROM Owner
+WHERE Address LIKE '%Lucknow%';
+```
+
+**Explanation:** `%Lucknow%` — the `%` wildcards on both sides match 'Lucknow' appearing **anywhere** in the address string (beginning, middle, or end).
+
+---
+
+## Q5. Total salary of all male staff
+
+```sql
+SELECT SUM(salary) AS total_male_salary
+FROM Staff
+WHERE gender = 'M';
+```
+
+**Explanation:** Aggregate function `SUM()` on salary, filtered to male staff only. No GROUP BY needed since we want one total figure.
+
+---
+
+## Q6. Count of properties with rent > 3500
+
+```sql
+SELECT COUNT(*) AS properties_above_3500
+FROM Property
+WHERE rent > 3500;
+```
+
+**Explanation:** `COUNT(*)` counts all rows matching the condition. Single-table, single-condition query.
+
+---
+
+## Q7. Total number of Managers and sum of their salaries
+
+```sql
+SELECT COUNT(*) AS total_managers,
+       SUM(salary) AS total_salary
+FROM Staff
+WHERE position = 'Manager';
+```
+
+**Explanation:** Two aggregate functions in one query — `COUNT(*)` for headcount and `SUM(salary)` for total pay. Both filtered to Managers only.
+
+---
+
+## Q8. Staff with salary higher than the average salary of branch BR003
+
+```sql
+SELECT Name, salary
+FROM Staff
+WHERE salary > (
+    SELECT AVG(salary)
+    FROM Staff
+    WHERE branchNo = 'BR003'
+);
+```
+
+**Explanation:**
+- Subquery computes the average salary of branch BR003
+- Outer query compares each staff member's salary against that average
+- Returns staff from **any** branch who earn more than BR003's average
+
+---
+
+## Q9. Give all Managers a 5% pay increase (UPDATE)
+
+```sql
+UPDATE Staff
+SET salary = salary * 1.05
+WHERE position = 'Manager';
+```
+
+**Explanation:** `salary * 1.05` multiplies current salary by 1.05 — equivalent to adding 5%. This is a DML (Data Manipulation) statement that permanently modifies the table. Always run a `SELECT` with the same `WHERE` first to verify which rows will be affected.
+
+---
+
+## Quick Summary Table
+
+| Q | Tables Used | Key Concept |
+|---|---|---|
+| 1 | Staff + Branch | JOIN + multiple WHERE filters |
+| 2 | Staff + Branch | JOIN + `IN` clause |
+| 3 | Property | Single-table filter + `ORDER BY` |
+| 4 | Owner | `LIKE` with wildcards |
+| 5 | Staff | `SUM()` aggregate |
+| 6 | Property | `COUNT()` aggregate |
+| 7 | Staff | Multiple aggregates in one query |
+| 8 | Staff | Scalar subquery with `AVG()` |
+| 9 | Staff | `UPDATE` with percentage formula |
+
+Q8 is the most conceptually important — **scalar subquery** (a subquery returning a single value used in a comparison). Q9 is the only DML write operation. Let me know if anything needs more detail!
