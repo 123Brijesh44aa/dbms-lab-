@@ -1,0 +1,260 @@
+## Step 1: Reading the E-R Diagram
+
+From the ER diagram, the schema is:
+
+```
+person        (driver_id, name, address)
+car           (license, model, year)
+accident      (report_number, location, date)
+owns          (driver_id, license)              -- relationship table
+participated  (driver_id, license, report_number, damage_amount)  -- ternary relationship
+```
+
+> **Key observations:**
+> - `person` → driver identified by `driver_id`
+> - `owns` links person to car (one person can own many cars)
+> - `participated` is a **ternary relationship** connecting driver + car + accident with `damage_amount` as a relationship attribute
+
+---
+
+## Q1 (Both Sets): CREATE TABLE Statements
+
+```sql
+CREATE TABLE person (
+    driver_id   VARCHAR(20) PRIMARY KEY,
+    name        VARCHAR(50) NOT NULL,
+    address     VARCHAR(100)
+);
+
+CREATE TABLE car (
+    license     VARCHAR(20) PRIMARY KEY,
+    model       VARCHAR(50),
+    year        YEAR
+);
+
+CREATE TABLE accident (
+    report_number   INT PRIMARY KEY,
+    location        VARCHAR(100),
+    date            DATE
+);
+
+CREATE TABLE owns (
+    driver_id   VARCHAR(20),
+    license     VARCHAR(20),
+    PRIMARY KEY (driver_id, license),
+    FOREIGN KEY (driver_id) REFERENCES person(driver_id),
+    FOREIGN KEY (license)   REFERENCES car(license)
+);
+
+CREATE TABLE participated (
+    driver_id       VARCHAR(20),
+    license         VARCHAR(20),
+    report_number   INT,
+    damage_amount   DECIMAL(10,2),
+    PRIMARY KEY (driver_id, license, report_number),
+    FOREIGN KEY (driver_id)     REFERENCES person(driver_id),
+    FOREIGN KEY (license)       REFERENCES car(license),
+    FOREIGN KEY (report_number) REFERENCES accident(report_number)
+);
+```
+
+---
+
+# SET-1 Queries
+
+---
+
+### a. Total number of people who owned cars involved in accidents in **2024**
+
+```sql
+SELECT COUNT(DISTINCT o.driver_id) AS total_people
+FROM owns o
+JOIN participated p ON o.license = p.license
+JOIN accident a ON p.report_number = a.report_number
+WHERE YEAR(a.date) = 2024;
+```
+
+**Explanation:** Join owns → participated → accident. Filter by year 2024. `COUNT(DISTINCT driver_id)` avoids counting the same person twice if they owned multiple cars in accidents.
+
+---
+
+### b. Add a new accident to the database
+
+```sql
+INSERT INTO accident (report_number, location, date)
+VALUES (1001, 'Lucknow', '2024-08-15');
+```
+
+**Explanation:** Straightforward INSERT. We assume values for required attributes as the question instructs. You can also insert into `participated` if the car and driver are known.
+
+---
+
+### c. Number of accidents involving cars belonging to **"Steve Joes"**
+
+```sql
+SELECT COUNT(DISTINCT p.report_number) AS accident_count
+FROM person per
+JOIN owns o ON per.driver_id = o.driver_id
+JOIN participated p ON o.license = p.license
+WHERE per.name = 'Steve Joes';
+```
+
+**Explanation:** Trace the path: person → owns → participated (which links to accident via report_number). Count distinct accidents since one car could appear in the same accident once.
+
+---
+
+### d. Car model and location where `damage_amount` is **highest**
+
+```sql
+SELECT c.model, a.location
+FROM car c
+JOIN participated p ON c.license = p.license
+JOIN accident a ON p.report_number = a.report_number
+WHERE p.damage_amount = (
+    SELECT MAX(damage_amount)
+    FROM participated
+);
+```
+
+**Explanation:** Scalar subquery finds the maximum damage amount. Main query fetches the model and location of the accident with that exact damage amount. Simple and clean.
+
+---
+
+### e. All drivers who did **NOT** make any accident
+
+```sql
+SELECT per.driver_id, per.name
+FROM person per
+WHERE per.driver_id NOT IN (
+    SELECT DISTINCT driver_id
+    FROM participated
+);
+```
+
+**Explanation:** Subquery collects all driver_ids who appear in `participated`. `NOT IN` gives drivers with zero accidents. Note: `participated` stores driver_id directly, so no join needed.
+
+---
+
+### f. Car models damaged by accident in the **last 5 years**
+
+```sql
+SELECT DISTINCT c.model
+FROM car c
+JOIN participated p ON c.license = p.license
+JOIN accident a ON p.report_number = a.report_number
+WHERE a.date >= DATE_SUB(CURDATE(), INTERVAL 5 YEAR);
+```
+
+**Explanation:** `DATE_SUB(CURDATE(), INTERVAL 5 YEAR)` dynamically computes the date 5 years ago from today. `DISTINCT` avoids duplicate model names.
+
+---
+---
+
+# SET-2 Queries
+
+---
+
+### a. Total people who owned cars **NOT involved** in accidents in 2024
+
+```sql
+SELECT COUNT(DISTINCT o.driver_id) AS total_people
+FROM owns o
+WHERE o.license NOT IN (
+    SELECT p.license
+    FROM participated p
+    JOIN accident a ON p.report_number = a.report_number
+    WHERE YEAR(a.date) = 2024
+);
+```
+
+**Explanation:** Subquery finds all car licenses involved in 2024 accidents. `NOT IN` gives cars that were never in a 2024 accident. Count distinct owners of those cars.
+
+---
+
+### b. Number of accidents involving cars of model **"Hundai"**
+
+```sql
+SELECT COUNT(DISTINCT p.report_number) AS accident_count
+FROM car c
+JOIN participated p ON c.license = p.license
+WHERE c.model = 'Hundai';
+```
+
+**Explanation:** Filter cars by model, join with participated, count distinct report numbers (accidents).
+
+---
+
+### c. Location with the **maximum number of accidents**
+
+```sql
+SELECT location
+FROM accident
+GROUP BY location
+HAVING COUNT(report_number) = (
+    SELECT MAX(acc_count)
+    FROM (
+        SELECT COUNT(report_number) AS acc_count
+        FROM accident
+        GROUP BY location
+    ) AS counts
+);
+```
+
+**Explanation:** Inner subquery counts accidents per location. Outer subquery gets the max count. `HAVING` filters to the location(s) matching that maximum — same nested MAX pattern as the previous paper!
+
+---
+
+### d. Year and location where `damage_amount` > Rs. 5000
+
+```sql
+SELECT YEAR(a.date) AS year, a.location
+FROM accident a
+JOIN participated p ON a.report_number = p.report_number
+WHERE p.damage_amount > 5000;
+```
+
+**Explanation:** Join accident with participated to access damage_amount. Extract year from date using `YEAR()`. Simple filter condition.
+
+---
+
+### e. Driver names who caused accidents in **"Lucknow"**
+
+```sql
+SELECT DISTINCT per.name
+FROM person per
+JOIN participated p ON per.driver_id = p.driver_id
+JOIN accident a ON p.report_number = a.report_number
+WHERE a.location = 'Lucknow';
+```
+
+**Explanation:** person → participated → accident chain. Filter by location = 'Lucknow'. `DISTINCT` prevents duplicate names if a driver caused multiple Lucknow accidents.
+
+---
+
+### f. Car models that did **NOT** make any accident
+
+```sql
+SELECT DISTINCT c.model
+FROM car c
+WHERE c.license NOT IN (
+    SELECT DISTINCT license
+    FROM participated
+);
+```
+
+**Explanation:** Subquery gets all car licenses that appear in participated (i.e., were in some accident). `NOT IN` gives cars with zero accidents. Return their models.
+
+---
+
+## Master Comparison: SET-1 vs SET-2
+
+| | SET-1 | SET-2 |
+|---|---|---|
+| a | Owners of cars IN accidents 2024 | Owners of cars NOT IN accidents 2024 |
+| b | INSERT new accident | Accidents involving model Hundai |
+| c | Accidents by "Steve Joes" | Location with MAX accidents |
+| d | Model + location at MAX damage | Year + location where damage > 5000 |
+| e | Drivers with NO accidents | Drivers who caused accident in Lucknow |
+| f | Models damaged in last 5 years | Models that made NO accident |
+
+The two sets are beautifully **mirrored** — SET-2 mostly flips the SET-1 conditions. Great exam design! Let me know if you need anything clarified.
